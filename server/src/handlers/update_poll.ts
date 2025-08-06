@@ -1,20 +1,60 @@
 
+import { db } from '../db';
+import { pollsTable, pollOptionsTable } from '../db/schema';
 import { type UpdatePollInput, type PollWithOptions } from '../schema';
+import { eq } from 'drizzle-orm';
 
-export async function updatePoll(input: UpdatePollInput): Promise<PollWithOptions> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating an existing poll in the database.
-    // Should update the updated_at timestamp and return the updated poll with options.
-    return Promise.resolve({
-        id: input.id,
-        title: input.title || 'Updated Poll',
-        description: input.description || null,
-        cover_photo_url: input.cover_photo_url || null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        is_active: input.is_active !== undefined ? input.is_active : true,
-        total_votes: 0,
-        popularity_score: 0,
-        options: []
-    } as PollWithOptions);
-}
+export const updatePoll = async (input: UpdatePollInput): Promise<PollWithOptions> => {
+  try {
+    // Build update object with only provided fields
+    const updateData: any = {};
+    
+    if (input.title !== undefined) {
+      updateData.title = input.title;
+    }
+    
+    if (input.description !== undefined) {
+      updateData.description = input.description;
+    }
+    
+    if (input.cover_photo_url !== undefined) {
+      updateData.cover_photo_url = input.cover_photo_url;
+    }
+    
+    if (input.is_active !== undefined) {
+      updateData.is_active = input.is_active;
+    }
+    
+    // Always update the updated_at timestamp
+    updateData.updated_at = new Date();
+
+    // Update the poll
+    const updatedPolls = await db.update(pollsTable)
+      .set(updateData)
+      .where(eq(pollsTable.id, input.id))
+      .returning()
+      .execute();
+
+    if (updatedPolls.length === 0) {
+      throw new Error(`Poll with id ${input.id} not found`);
+    }
+
+    // Get the poll options
+    const options = await db.select()
+      .from(pollOptionsTable)
+      .where(eq(pollOptionsTable.poll_id, input.id))
+      .execute();
+
+    const updatedPoll = updatedPolls[0];
+    
+    // Convert numeric fields and return with options
+    return {
+      ...updatedPoll,
+      popularity_score: parseFloat(updatedPoll.popularity_score),
+      options: options
+    };
+  } catch (error) {
+    console.error('Poll update failed:', error);
+    throw error;
+  }
+};
